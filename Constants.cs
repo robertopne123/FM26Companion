@@ -51,7 +51,8 @@ namespace Gaffer
         public const float PanelInitialX = 20f;   // pixels from left edge
         public const float PanelInitialY = -20f;  // pixels from top edge (negative = down)
         public const float TitleBarHeight = 38f;
-        public const float FooterHeight   = 42f;
+        // Two-row footer: status label above, button row below
+        public const float FooterHeight   = 58f;
 
         // ── Colour palette (dark theme — blends with FM26's aesthetic) ─────────────
 

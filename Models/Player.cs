@@ -82,14 +82,19 @@ namespace Gaffer.Models
         [JsonPropertyName("finishing")]    public int? Finishing    { get; set; }
 
         // Mental
-        [JsonPropertyName("decisions")]    public int? Decisions    { get; set; }
-        [JsonPropertyName("composure")]    public int? Composure    { get; set; }
-        [JsonPropertyName("positioning")]  public int? Positioning  { get; set; }
-        [JsonPropertyName("anticipation")] public int? Anticipation { get; set; }
-        [JsonPropertyName("vision")]       public int? Vision       { get; set; }
-        [JsonPropertyName("workRate")]     public int? WorkRate     { get; set; }
-        [JsonPropertyName("leadership")]   public int? Leadership   { get; set; }
-        [JsonPropertyName("teamwork")]     public int? Teamwork     { get; set; }
+        [JsonPropertyName("decisions")]      public int? Decisions      { get; set; }
+        [JsonPropertyName("composure")]      public int? Composure      { get; set; }
+        [JsonPropertyName("positioning")]    public int? Positioning    { get; set; }
+        [JsonPropertyName("anticipation")]   public int? Anticipation   { get; set; }
+        [JsonPropertyName("vision")]         public int? Vision         { get; set; }
+        [JsonPropertyName("workRate")]       public int? WorkRate       { get; set; }
+        [JsonPropertyName("leadership")]     public int? Leadership     { get; set; }
+        [JsonPropertyName("teamwork")]       public int? Teamwork       { get; set; }
+        [JsonPropertyName("aggression")]     public int? Aggression     { get; set; }
+        [JsonPropertyName("concentration")]  public int? Concentration  { get; set; }
+        [JsonPropertyName("bravery")]        public int? Bravery        { get; set; }
+        [JsonPropertyName("determination")]  public int? Determination  { get; set; }
+        [JsonPropertyName("flair")]          public int? Flair          { get; set; }
 
         // Physical
         [JsonPropertyName("pace")]         public int? Pace         { get; set; }

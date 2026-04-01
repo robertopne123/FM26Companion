@@ -26,10 +26,11 @@ namespace Gaffer
         private Canvas         _canvas      = null!;
         private RectTransform  _panelRect   = null!;
         private RectTransform  _titleBarRect = null!;
-        private Text           _responseText = null!;
-        private Text           _statusLabel  = null!;
-        private Button         _testButton   = null!;
-        private bool           _panelVisible = true;
+        private Text           _responseText    = null!;
+        private Text           _statusLabel     = null!;
+        private Button         _testButton      = null!;
+        private Button         _identityButton  = null!;
+        private bool           _panelVisible    = true;
         private bool           _isDragging;
         private Vector2        _dragOffset;
 
@@ -251,36 +252,47 @@ namespace Gaffer
             bg.color = Constants.FooterBackground;
 
             var footerRt = footerObj.GetComponent<RectTransform>();
-            footerRt.anchorMin = new Vector2(0f, 0f);
-            footerRt.anchorMax = new Vector2(1f, 0f);
-            footerRt.pivot     = new Vector2(0.5f, 0f);
-            footerRt.sizeDelta = new Vector2(0f, Constants.FooterHeight);
+            footerRt.anchorMin        = new Vector2(0f, 0f);
+            footerRt.anchorMax        = new Vector2(1f, 0f);
+            footerRt.pivot            = new Vector2(0.5f, 0f);
+            footerRt.sizeDelta        = new Vector2(0f, Constants.FooterHeight);
             footerRt.anchoredPosition = Vector2.zero;
 
-            // Status label (left side)
+            // ── Row 1: Status label (top half of footer) ──────────────────────────
             var statusObj = MakeText("StatusLabel", footerObj, "Ready", 11, TextAnchor.MiddleLeft);
             _statusLabel       = statusObj.GetComponent<Text>();
             _statusLabel.color = Constants.SubtleTextColor;
 
             var statusRt = statusObj.GetComponent<RectTransform>();
-            statusRt.anchorMin = Vector2.zero;
-            statusRt.anchorMax = Vector2.one;
+            statusRt.anchorMin = new Vector2(0f, 0.52f);
+            statusRt.anchorMax = new Vector2(1f, 1f);
             statusRt.offsetMin = new Vector2(10f, 0f);
-            statusRt.offsetMax = new Vector2(-142f, 0f);
+            statusRt.offsetMax = new Vector2(-10f, -2f);
 
-            // Test Connection button (right side)
-            var btnObj = MakeButton("TestButton", footerObj, "Test Connection", 11);
-            _testButton = btnObj.GetComponent<Button>();
+            // ── Row 2: Button row (bottom half of footer) ─────────────────────────
+            // Buttons are right-aligned; add new features left of Test Connection.
 
-            var btnRt = btnObj.GetComponent<RectTransform>();
-            btnRt.anchorMin = new Vector2(1f, 0.5f);
-            btnRt.anchorMax = new Vector2(1f, 0.5f);
-            btnRt.pivot     = new Vector2(1f, 0.5f);
-            btnRt.sizeDelta = new Vector2(134f, 28f);
-            btnRt.anchoredPosition = new Vector2(-8f, 0f);
+            // Test Connection — rightmost
+            var testObj = MakeButton("TestButton", footerObj, "Test Connection", 10);
+            _testButton = testObj.GetComponent<Button>();
+            var testRt  = testObj.GetComponent<RectTransform>();
+            testRt.anchorMin        = new Vector2(1f, 0f);
+            testRt.anchorMax        = new Vector2(1f, 0.50f);
+            testRt.pivot            = new Vector2(1f, 0f);
+            testRt.sizeDelta        = new Vector2(120f, 0f);
+            testRt.anchoredPosition = new Vector2(-8f, 4f);
+            _testButton.onClick.AddListener((UnityEngine.Events.UnityAction)OnTestConnectionClicked);
 
-            _testButton.onClick.AddListener(
-                (UnityEngine.Events.UnityAction)OnTestConnectionClicked);
+            // Identity Analysis — left of Test Connection
+            var idObj = MakeButton("IdentityButton", footerObj, "Identity", 10);
+            _identityButton = idObj.GetComponent<Button>();
+            var idRt        = idObj.GetComponent<RectTransform>();
+            idRt.anchorMin        = new Vector2(1f, 0f);
+            idRt.anchorMax        = new Vector2(1f, 0.50f);
+            idRt.pivot            = new Vector2(1f, 0f);
+            idRt.sizeDelta        = new Vector2(86f, 0f);
+            idRt.anchoredPosition = new Vector2(-136f, 4f);
+            _identityButton.onClick.AddListener((UnityEngine.Events.UnityAction)OnIdentityAnalysisClicked);
         }
 
         // ── UI factory helpers ────────────────────────────────────────────────────
@@ -415,6 +427,68 @@ namespace Gaffer
                     AppendResponse($"\n\n⚠  Connection error: {ex.Message}");
                     SetStatus("Error");
                     _testButton.interactable = true;
+                });
+            }
+        }
+
+        // ── Identity analysis pipeline ────────────────────────────────────────────
+
+        private void OnIdentityAnalysisClicked()
+        {
+            SetStatus("Scoring squad…");
+            _identityButton.interactable = false;
+            _testButton.interactable     = false;
+
+            var apiKey = Plugin.ApiKey.Value;
+            var state  = DataReader.GetCurrentGameState();
+
+            // Phase 1: show local scoring results immediately (no API call)
+            var localReport = AttributeAnalyser.AnalyseSquad(state.Squad);
+            var localSummary = AttributeAnalyser.FormatLocalSummary(localReport);
+            AppendResponse($"\n\n{localSummary}");
+
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                AppendResponse("⚠  No API key — local scoring complete. Set Claude > ApiKey to add Claude's tactical narrative.");
+                SetStatus("Local only");
+                _identityButton.interactable = true;
+                _testButton.interactable     = true;
+                return;
+            }
+
+            // Phase 2: fire async Claude call for tactical narrative
+            SetStatus("Analysing with Claude…");
+            var stateJson = System.Text.Json.JsonSerializer.Serialize(state,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = false });
+            _ = RunIdentityAnalysisAsync(apiKey, state.Squad, stateJson);
+        }
+
+        private async Task RunIdentityAnalysisAsync(
+            string apiKey,
+            Models.Squad? squad,
+            string stateJson)
+        {
+            try
+            {
+                var report = await AttributeAnalyser.AnalyseSquadWithClaudeAsync(
+                    squad, apiKey, stateJson).ConfigureAwait(false);
+
+                MainThreadDispatcher.Enqueue(() =>
+                {
+                    AppendResponse($"\n{report.ClaudeNarrative}");
+                    SetStatus("Identity analysis complete");
+                    _identityButton.interactable = true;
+                    _testButton.interactable     = true;
+                });
+            }
+            catch (Exception ex)
+            {
+                MainThreadDispatcher.Enqueue(() =>
+                {
+                    AppendResponse($"\n⚠  Claude error: {ex.Message}");
+                    SetStatus("Error");
+                    _identityButton.interactable = true;
+                    _testButton.interactable     = true;
                 });
             }
         }
