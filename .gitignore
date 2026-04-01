@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+*.DS_Store
+
+# BepInEx interop DLLs — generated locally, never committed
+interop/
+
+# User config with API key
+BepInEx/config/FM26Companion.cfg
