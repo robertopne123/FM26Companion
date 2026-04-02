@@ -26,6 +26,10 @@ export GameDir="$FM26_APP/Contents/MacOS"
 dotnet build -c Release
 ```
 
+> `GameDir` can be either:
+> - `.../Football Manager 2026.app/Contents/MacOS` (recommended), or
+> - `.../Football Manager 2026.app` (the project now auto-detects `Contents/MacOS/BepInEx/interop`).
+
 Output DLL:
 
 `bin/Release/net6.0/Gaffer.dll`
@@ -47,6 +51,19 @@ strings "$FM26_APP/Contents/MacOS/Football Manager 2026" | grep -E "^[0-9]{4}\\.
 ```
 
 If those paths are missing, your Steam library is likely on a non-default location; resolve the app with `find` first, then reuse `FM26_APP`.
+
+## Fixing CS0246 errors (`Vector2`, `Transform`, `PointerEventData`)
+
+Those errors mean Unity interop DLLs were not resolved during build. Use this sequence:
+
+1. Verify `GameDir` is exported correctly.
+2. Launch FM26 once with BepInEx installed so `BepInEx/interop/` is generated.
+3. Confirm these files exist under your resolved interop folder:
+   - `UnityEngine.CoreModule.dll`
+   - `UnityEngine.UI.dll`
+   - `UnityEngine.TextRenderingModule.dll`
+   - `UnityEngine.InputLegacyModule.dll`
+4. Re-run `dotnet build -c Release`.
 
 ## Current phase-1 scaffold
 

@@ -9,6 +9,8 @@
     <Version>0.1.0</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GameDir Condition="'$(GameDir)' == ''">GAMEDIR_NOT_SET</GameDir>
+    <GameInteropDir Condition="Exists('$(GameDir)/BepInEx/interop')">$(GameDir)/BepInEx/interop</GameInteropDir>
+    <GameInteropDir Condition="'$(GameInteropDir)' == '' and Exists('$(GameDir)/Contents/MacOS/BepInEx/interop')">$(GameDir)/Contents/MacOS/BepInEx/interop</GameInteropDir>
     <NoWarn>$(NoWarn);CS0234;CS0246</NoWarn>
   </PropertyGroup>
 
@@ -22,20 +24,33 @@
 
   <ItemGroup>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(GameDir)/BepInEx/interop/UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(GameInteropDir)/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.UI">
-      <HintPath>$(GameDir)/BepInEx/interop/UnityEngine.UI.dll</HintPath>
+      <HintPath>$(GameInteropDir)/UnityEngine.UI.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.TextRenderingModule">
-      <HintPath>$(GameDir)/BepInEx/interop/UnityEngine.TextRenderingModule.dll</HintPath>
+      <HintPath>$(GameInteropDir)/UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.InputLegacyModule">
-      <HintPath>$(GameDir)/BepInEx/interop/UnityEngine.InputLegacyModule.dll</HintPath>
+      <HintPath>$(GameInteropDir)/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GameInteropDir)/UnityEngine.UIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+
+  <Target Name="ValidateGameInterop" BeforeTargets="ResolveReferences">
+    <Error
+      Condition="'$(GameInteropDir)' == ''"
+      Text="Game interop folder not found. Set -p:GameDir to either (a) FM26.app/Contents/MacOS or (b) FM26.app. Then launch FM26 once so BepInEx generates BepInEx/interop/." />
+    <Error
+      Condition="'$(GameInteropDir)' != '' and !Exists('$(GameInteropDir)/UnityEngine.CoreModule.dll')"
+      Text="UnityEngine.CoreModule.dll not found under $(GameInteropDir). Launch FM26 once with BepInEx installed to generate interop assemblies." />
+  </Target>
 </Project>
