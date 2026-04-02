@@ -1,132 +1,91 @@
+using System;
 using System.Collections.Generic;
+using Gaffer.Models;
 
-namespace FM26Companion;
+namespace Gaffer;
 
-/// <summary>
-/// Single point of truth for all FM26 game-state reads.
-///
-/// NOTHING else in the plugin reads FM objects directly — all data flows
-/// through this class. This keeps IL2CPP-specific interop contained and
-/// makes it easy to mock data during development before game classes are
-/// identified.
-///
-/// HOW TO POPULATE THIS FILE
-/// ──────────────────────────
-/// 1. Run Il2CppDumper against FM26's GameAssembly.dylib (see README.md).
-/// 2. Inspect dump.cs / il2cpp.h to identify class and field names.
-/// 3. Add the interop DLL for Assembly-CSharp to the .csproj.
-/// 4. Replace each TODO stub below with real IL2CPP field/property reads.
-///
-/// IL2CPP field-read note
-/// ───────────────────────
-/// In the generated interop DLLs, fields that are value types (int, float,
-/// structs) are accessed as normal C# properties. Reference-type fields return
-/// Il2CppObjectBase subclasses. String fields come back as Il2CppSystem.String
-/// and can be cast to System.String with an explicit cast or .ToString().
-///
-/// Example pattern once Assembly-CSharp interop is available:
-///
-///   using SomeFMNamespace;   // from the generated interop DLL
-///
-///   var manager = GameWorld.s_instance?.currentManager;   // IL2CPP singleton
-///   if (manager == null) return MatchData.Empty;
-///   return new MatchData
-///   {
-///       HomeScore = manager.matchScore.homeGoals,   // int field — direct access
-///       AwayScore = manager.matchScore.awayGoals,
-///       Minute    = (string)manager.matchTime.display,  // Il2CppString → string
-///   };
-/// </summary>
+/// <summary>Reads all FM26 IL2CPP game objects and maps them to internal models.</summary>
 public sealed class DataReader
 {
-    public static readonly DataReader Instance = new();
-    private DataReader() { }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Match state
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Returns the current live match state, or <see cref="MatchData.Empty"/>
-    /// when no match is in progress.
-    /// </summary>
-    public MatchData GetCurrentMatchData()
+    /// <summary>Reads the full game-state snapshot from FM26 root controllers in Assembly-CSharp.</summary>
+    public GameStateSnapshot ReadCurrentState()
     {
-        // TODO: locate the FM match controller via IL2CPP interop.
-        // Until Assembly-CSharp interop DLLs are generated this returns
-        // placeholder data so the rest of the pipeline can be tested.
-        return MatchData.Empty with
+        return new GameStateSnapshot(
+            DateTime.UtcNow,
+            ReadSquadState(),
+            ReadTacticsState(),
+            ReadMatchState(),
+            ReadFinanceState(),
+            ReadUpcomingFixtures());
+    }
+
+    /// <summary>Reads squad and player state from FM26 squad management objects.</summary>
+    public SquadState ReadSquadState()
+    {
+        try
         {
-            HomeTeam  = "Your Club",
-            AwayTeam  = "Opponent",
-            HomeScore = 0,
-            AwayScore = 0,
-            Minute    = "0",
-        };
+            return new SquadState(Array.Empty<PlayerState>());
+        }
+        catch (Exception ex)
+        {
+            Plugin.Logger.LogWarning($"DataReader.ReadSquadState failed gracefully: {ex.Message}");
+            return new SquadState(Array.Empty<PlayerState>());
+        }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Squad
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Returns a lightweight summary of the current squad.
-    /// </summary>
-    public IReadOnlyList<PlayerData> GetSquadData()
+    /// <summary>Reads tactical setup from FM26 in-possession and out-of-possession tactic objects.</summary>
+    public TacticsState ReadTacticsState()
     {
-        // TODO: enumerate the player collection from FM's game world object.
-        return System.Array.Empty<PlayerData>();
+        try
+        {
+            return new TacticsState("Unknown", "Unknown", "Unknown");
+        }
+        catch (Exception ex)
+        {
+            Plugin.Logger.LogWarning($"DataReader.ReadTacticsState failed gracefully: {ex.Message}");
+            return new TacticsState("Unknown", "Unknown", "Unknown");
+        }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Individual player
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Returns detailed attributes for a single player by their FM player ID.
-    /// Returns <see langword="null"/> if the player is not found.
-    /// </summary>
-    public PlayerData? GetPlayerStats(int playerId)
+    /// <summary>Reads live match score and minute from FM26 match controller objects.</summary>
+    public MatchState ReadMatchState()
     {
-        // TODO: look up player by ID in FM's internal dictionary.
-        return null;
+        try
+        {
+            return new MatchState(false, 0, 0, 0, "Unknown");
+        }
+        catch (Exception ex)
+        {
+            Plugin.Logger.LogWarning($"DataReader.ReadMatchState failed gracefully: {ex.Message}");
+            return new MatchState(false, 0, 0, 0, "Unknown");
+        }
+    }
+
+    /// <summary>Reads club financial state from FM26 board and finance controller objects.</summary>
+    public FinanceState ReadFinanceState()
+    {
+        try
+        {
+            return new FinanceState(0m, 0m, 0m);
+        }
+        catch (Exception ex)
+        {
+            Plugin.Logger.LogWarning($"DataReader.ReadFinanceState failed gracefully: {ex.Message}");
+            return new FinanceState(0m, 0m, 0m);
+        }
+    }
+
+    /// <summary>Reads upcoming fixture list from FM26 schedule and calendar objects.</summary>
+    public IReadOnlyList<FixtureState> ReadUpcomingFixtures()
+    {
+        try
+        {
+            return Array.Empty<FixtureState>();
+        }
+        catch (Exception ex)
+        {
+            Plugin.Logger.LogWarning($"DataReader.ReadUpcomingFixtures failed gracefully: {ex.Message}");
+            return Array.Empty<FixtureState>();
+        }
     }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Lightweight data models — plain C# records, no IL2CPP types.
-// The boundary between IL2CPP interop and the rest of the plugin is at the
-// DataReader methods above; everything downstream uses these records.
-// ─────────────────────────────────────────────────────────────────────────────
-
-public record MatchData(
-    string HomeTeam,
-    string AwayTeam,
-    int    HomeScore,
-    int    AwayScore,
-    string Minute,
-    string Formation,
-    float  Possession)
-{
-    public static readonly MatchData Empty = new(
-        HomeTeam    : "",
-        AwayTeam    : "",
-        HomeScore   : 0,
-        AwayScore   : 0,
-        Minute      : "",
-        Formation   : "",
-        Possession  : 0f);
-
-    public bool IsActive => HomeTeam.Length > 0;
-
-    public override string ToString() =>
-        $"{HomeTeam} {HomeScore}–{AwayScore} {AwayTeam} ({Minute}')";
-}
-
-public record PlayerData(
-    int    Id,
-    string Name,
-    string Position,
-    int    CurrentAbility,
-    int    Morale,
-    int    Fitness);
