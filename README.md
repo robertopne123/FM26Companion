@@ -65,6 +65,13 @@ Those errors mean Unity interop DLLs were not resolved during build. Use this se
    - `UnityEngine.InputLegacyModule.dll`
 4. Re-run `dotnet build -c Release`.
 
+If your error output mentions `src/UI/GafferPanel.cs`, you still have a stale legacy file in your local checkout. Remove it and rebuild:
+
+```bash
+rm -f src/UI/GafferPanel.cs
+dotnet build -c Release
+```
+
 ## Current phase-1 scaffold
 
 - `Plugin.cs`: entry point and wiring only

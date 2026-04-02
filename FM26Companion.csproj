@@ -22,6 +22,14 @@
     <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.738" />
   </ItemGroup>
 
+  <!--
+    SDK-style projects compile every *.cs file by default.
+    Keep legacy deleted files from old checkouts out of compilation.
+  -->
+  <ItemGroup>
+    <Compile Remove="src/UI/GafferPanel.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(GameInteropDir)/UnityEngine.CoreModule.dll</HintPath>
