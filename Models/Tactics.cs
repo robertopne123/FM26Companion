@@ -36,25 +36,44 @@ namespace Gaffer.Models
         public List<PlayerRole>? PlayerRoles { get; set; }
     }
 
-    /// <summary>A single player's role, duty, and individual instructions in the current tactic.</summary>
+    /// <summary>
+    /// A single player's FM26 dual-role assignment in the current tactic.
+    /// FM26 assigns in-possession and out-of-possession roles independently per slot.
+    /// TODO: confirm exact field names from FM26 IL2CPP type once interop DLLs are available.
+    /// </summary>
     public sealed class PlayerRole
     {
         [JsonPropertyName("playerName")]
         public string? PlayerName { get; set; }
 
-        /// <summary>Tactical position slot, e.g. "ML", "DCR", "ST".</summary>
+        /// <summary>
+        /// Tactical position slot, e.g. "MCL", "RCM", "AML", "DCR".
+        /// FM26 uses the codes: DCL/DC/DCR, DL/DR, WBL/WBR, LDM/DM/RDM,
+        /// LCM/MC/RCM, ML/MR, AMCL/AMC/AMCR, AML/AMR, ST.
+        /// </summary>
         [JsonPropertyName("slot")]
         public string? Slot { get; set; }
 
-        /// <summary>Role name, e.g. "Mezzala", "Ball Playing Defender".</summary>
-        [JsonPropertyName("role")]
-        public string? Role { get; set; }
+        /// <summary>
+        /// The role assigned for when the team is in possession of the ball.
+        /// FM26 in-possession role name (e.g. "Mezzala", "Ball-Playing Defender").
+        /// TODO: update string values once FM26 role names are confirmed from the game UI.
+        /// </summary>
+        [JsonPropertyName("inPossessionRole")]
+        public string? InPossessionRole { get; set; }
 
-        /// <summary>Duty, e.g. "Attack", "Support", "Defend", "Automatic".</summary>
-        [JsonPropertyName("duty")]
-        public string? Duty { get; set; }
+        /// <summary>
+        /// The role assigned for when the team is out of possession.
+        /// FM26 out-of-possession role name (e.g. "Ball Winner", "Pressing Forward").
+        /// TODO: update string values once FM26 role names are confirmed from the game UI.
+        /// </summary>
+        [JsonPropertyName("outOfPossessionRole")]
+        public string? OutOfPossessionRole { get; set; }
 
-        [JsonPropertyName("instructions")]
-        public List<string>? Instructions { get; set; }
+        [JsonPropertyName("inPossessionInstructions")]
+        public List<string>? InPossessionInstructions { get; set; }
+
+        [JsonPropertyName("outOfPossessionInstructions")]
+        public List<string>? OutOfPossessionInstructions { get; set; }
     }
 }

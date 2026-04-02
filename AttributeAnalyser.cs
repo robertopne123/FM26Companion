@@ -4,40 +4,43 @@ using System.Linq;
 using System.Threading.Tasks;
 using Gaffer.Models;
 using Gaffer.Prompts;
+using static Gaffer.RoleLibrary;
 
 namespace Gaffer
 {
     /// <summary>
-    /// Orchestrates attribute identity analysis.
+    /// Orchestrates FM26 attribute identity analysis.
+    ///
+    /// FM26 uses separate in-possession (IP) and out-of-possession (OP) roles per player.
+    /// Analysis therefore produces two independent scores per player:
+    ///   - IP score: how well a player's on-ball attributes suit each IP role
+    ///   - OP score: how well a player's off-ball attributes suit each OP role
+    ///
+    /// A player is flagged as misaligned when either their best IP role or their best OP
+    /// role falls in a different position group to their registered position, AND the gap
+    /// between their best score and their best in-group score exceeds MisalignmentThreshold.
     ///
     /// Two-phase design:
-    ///   1. Local analysis  — pure C# role scoring via RoleLibrary. Instant, no API.
-    ///                        Works even with partial attribute data (missing attrs → average).
-    ///   2. Claude analysis — sends misalignment report to Claude for tactical narrative.
-    ///                        Optional; skipped if API key is absent or call fails.
-    ///
-    /// Callers always receive the full local analysis immediately. Claude's narrative
-    /// is populated on the same report object when the async phase completes.
+    ///   1. AnalyseSquad()              — pure C# scoring, instant, no API.
+    ///   2. AnalyseSquadWithClaudeAsync() — adds Claude narrative on top.
     /// </summary>
     internal static class AttributeAnalyser
     {
         /// <summary>
-        /// Score gap (0–100) above which a player is considered misaligned.
-        /// i.e. best-fit role must outscore best role in current group by this much.
-        /// Higher = fewer (but more confident) misalignment flags.
+        /// Minimum score gap (0–100) for a misalignment to be flagged.
+        /// Best-fit role must outscore best in-group role by this amount.
         /// </summary>
         public const double MisalignmentThreshold = 8.0;
 
         // ── Public entry points ───────────────────────────────────────────────────
 
         /// <summary>
-        /// Runs local attribute scoring for the entire squad synchronously.
+        /// Runs local IP+OP scoring for the entire squad synchronously.
         /// Returns immediately — no API call.
         /// </summary>
         public static AttributeIdentityReport AnalyseSquad(Squad? squad)
         {
             var report = new AttributeIdentityReport();
-
             if (squad == null || squad.Players.Count == 0)
                 return report;
 
@@ -45,22 +48,19 @@ namespace Gaffer
             {
                 var result = AnalysePlayer(player);
                 report.Players.Add(result);
-
                 if (result.IsMisaligned)
                     report.Misaligned.Add(result);
             }
 
-            // Sort misaligned by gap descending — biggest misalignments first
             report.Misaligned = report.Misaligned
-                .OrderByDescending(p => p.MisalignmentGap)
+                .OrderByDescending(p => p.MaxMisalignmentGap)
                 .ToList();
 
             return report;
         }
 
         /// <summary>
-        /// Runs local scoring then calls Claude for narrative analysis.
-        /// The returned report has ClaudeNarrative populated when the task completes.
+        /// Runs local scoring then calls Claude for tactical narrative.
         /// Throws on API error — callers should catch.
         /// </summary>
         public static async Task<AttributeIdentityReport> AnalyseSquadWithClaudeAsync(
@@ -68,12 +68,10 @@ namespace Gaffer
             string  apiKey,
             string  gameStateJson)
         {
-            var report = AnalyseSquad(squad);
-
+            var report       = AnalyseSquad(squad);
             var systemPrompt = Constants.ClaudeSystemPromptBase
                 + AttributeIdentityPrompt.SystemAddendum
-                + $"\n\nCurrent game state context:\n{gameStateJson}";
-
+                + $"\n\nCurrent game state:\n{gameStateJson}";
             var userMessage  = AttributeIdentityPrompt.Build(report);
 
             report.ClaudeNarrative = await ClaudeClient.SendAsync(
@@ -85,80 +83,97 @@ namespace Gaffer
         // ── Per-player analysis ───────────────────────────────────────────────────
 
         /// <summary>
-        /// Scores a single player against all roles and determines whether
-        /// their attributes indicate a position misalignment.
+        /// Scores a single player across all IP and OP roles independently,
+        /// then determines misalignment on each axis.
         /// </summary>
         public static PlayerIdentityResult AnalysePlayer(Player player)
         {
-            var registeredGroup = RoleLibrary.GetPositionGroup(player.RegisteredPosition);
-            var allScores       = RoleLibrary.ScoreAllRoles(player.Attributes);
+            var group   = GetPositionGroup(player.RegisteredPosition);
+            var attrs   = player.Attributes;
 
-            // Best fit across all roles
-            var best = allScores[0]; // already sorted descending
+            var allIp   = ScoreAllInPossession(attrs);
+            var allOp   = ScoreAllOutOfPossession(attrs);
 
-            // Best fit within the player's current registered position group
-            var bestInGroup = allScores
-                .FirstOrDefault(r => r.PositionGroup == registeredGroup);
+            var bestIp  = allIp[0];
+            var bestOp  = allOp[0];
 
-            var bestInGroupScore = bestInGroup?.Score ?? 0;
-            var bestInGroupRole  = bestInGroup?.RoleName;
+            var bestIpInGroup = allIp.FirstOrDefault(r => r.PositionGroup == group);
+            var bestOpInGroup = allOp.FirstOrDefault(r => r.PositionGroup == group);
 
-            var gap = best.Score - bestInGroupScore;
+            var ipGap = bestIp.Score - (bestIpInGroup?.Score ?? 0);
+            var opGap = bestOp.Score - (bestOpInGroup?.Score ?? 0);
 
             return new PlayerIdentityResult
             {
                 PlayerName             = player.Name,
                 RegisteredPosition     = player.RegisteredPosition,
-                RegisteredGroup        = registeredGroup,
-                BestFitRole            = best.RoleName,
-                BestFitGroup           = best.PositionGroup,
-                BestFitScore           = Math.Round(best.Score, 1),
-                BestRoleInCurrentGroup = bestInGroupRole,
-                BestScoreInCurrentGroup= Math.Round(bestInGroupScore, 1),
-                MisalignmentGap        = Math.Round(gap, 1),
-                IsMisaligned           = best.PositionGroup != registeredGroup
-                                         && gap >= MisalignmentThreshold,
-                TopRoles               = allScores.Take(5).ToList()
+                RegisteredGroup        = group,
+
+                // IP
+                BestIpRole             = bestIp.RoleName,
+                BestIpGroup            = bestIp.PositionGroup,
+                BestIpScore            = Round(bestIp.Score),
+                BestIpRoleInGroup      = bestIpInGroup?.RoleName,
+                BestIpScoreInGroup     = Round(bestIpInGroup?.Score ?? 0),
+                IpMisalignmentGap      = Round(ipGap),
+                IsIpMisaligned         = bestIp.PositionGroup != group && ipGap >= MisalignmentThreshold,
+                TopIpRoles             = allIp.Take(4).ToList(),
+
+                // OP
+                BestOpRole             = bestOp.RoleName,
+                BestOpGroup            = bestOp.PositionGroup,
+                BestOpScore            = Round(bestOp.Score),
+                BestOpRoleInGroup      = bestOpInGroup?.RoleName,
+                BestOpScoreInGroup     = Round(bestOpInGroup?.Score ?? 0),
+                OpMisalignmentGap      = Round(opGap),
+                IsOpMisaligned         = bestOp.PositionGroup != group && opGap >= MisalignmentThreshold,
+                TopOpRoles             = allOp.Take(4).ToList(),
             };
         }
 
-        // ── Formatting helpers for display ────────────────────────────────────────
+        // ── Local summary formatter ───────────────────────────────────────────────
 
         /// <summary>
-        /// Formats the local analysis portion of the report as readable panel text.
-        /// Used to display results before Claude's narrative arrives.
+        /// Formats the local scoring results as panel text, displayed before Claude replies.
+        /// Separates IP and OP misalignments so the manager can see which axis is the problem.
         /// </summary>
         public static string FormatLocalSummary(AttributeIdentityReport report)
         {
             if (report.Players.Count == 0)
-                return "No squad data available. DataReader stubs are active — wire up FM26 types to see real results.";
+                return "No squad data available — DataReader stubs active. Wire up FM26 IL2CPP types to see real results.";
 
-            var lines = new System.Text.StringBuilder();
-            lines.AppendLine($"Attribute Identity Analysis — {report.Players.Count} players scored");
-            lines.AppendLine();
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"Attribute Identity Analysis  ({report.Players.Count} players scored)");
+            sb.AppendLine();
 
             if (report.Misaligned.Count == 0)
             {
-                lines.AppendLine("No significant misalignments detected.");
-                lines.AppendLine("All players' best-fit roles are within their registered position groups.");
+                sb.AppendLine("No significant misalignments detected.");
+                sb.AppendLine("All players' best IP and OP roles align with their registered position group.");
+                return sb.ToString();
             }
-            else
+
+            sb.AppendLine($"⚠  {report.Misaligned.Count} misaligned player(s) — sorted by largest gap:");
+            sb.AppendLine();
+
+            foreach (var p in report.Misaligned)
             {
-                lines.AppendLine($"⚠  {report.Misaligned.Count} misaligned player(s):");
-                lines.AppendLine();
+                sb.Append($"  {p.PlayerName ?? "?"} [{p.RegisteredPosition ?? "?"}]");
 
-                foreach (var p in report.Misaligned)
-                {
-                    lines.AppendLine(
-                        $"  {p.PlayerName ?? "Unknown"} " +
-                        $"[{p.RegisteredPosition ?? "?"}] → best fit: {p.BestFitRole} " +
-                        $"({p.BestFitGroup}, {p.BestFitScore:F0}/100, gap +{p.MisalignmentGap:F0})");
-                }
+                if (p.IsIpMisaligned)
+                    sb.Append($"  IP→ {p.BestIpRole} ({p.BestIpGroup}, {p.BestIpScore:F0}/100, +{p.IpMisalignmentGap:F0})");
+
+                if (p.IsOpMisaligned)
+                    sb.Append($"  OP→ {p.BestOpRole} ({p.BestOpGroup}, {p.BestOpScore:F0}/100, +{p.OpMisalignmentGap:F0})");
+
+                sb.AppendLine();
             }
 
-            lines.AppendLine();
-            lines.AppendLine("Fetching Claude's tactical analysis…");
-            return lines.ToString();
+            sb.AppendLine();
+            sb.AppendLine("Sending to Claude for tactical analysis…");
+            return sb.ToString();
         }
+
+        private static double Round(double v) => Math.Round(v, 1);
     }
 }
