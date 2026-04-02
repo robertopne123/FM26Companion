@@ -1,64 +1,54 @@
+using System;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-namespace FM26Companion.UI;
+namespace Gaffer.UI;
 
-/// <summary>
-/// Allows the Gaffer panel to be repositioned by dragging its title bar.
-/// Kept in its own class so GafferPanel stays focused on layout/content.
-/// </summary>
+/// <summary>Handles panel dragging by moving the target window RectTransform.</summary>
 public class DragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler
 {
-    // ── IL2CPP constructor requirement ────────────────────────────────────────
-    // Required for any MonoBehaviour subclass registered via ClassInjector.
-    // See Plugin.cs for the full explanation.
-    public DragHandler(System.IntPtr ptr) : base(ptr) { }
+    private RectTransform? _target;
+    private Vector2 _offset;
 
-    private RectTransform? _rectTransform;
-    private Canvas? _canvas;
-    private Vector2 _dragOffset;
-
-    private void Awake()
+    public DragHandler(IntPtr pointer) : base(pointer)
     {
-        _rectTransform = GetComponent<RectTransform>();
-
-        // Walk up to find the Canvas — needed for the reference pixel-per-unit
-        // scaling used by RectTransformUtility.ScreenPointToLocalPointInRectangle.
-        _canvas = GetComponentInParent<Canvas>();
     }
 
-    // ── IL2CPP event interface note ───────────────────────────────────────────
-    // IBeginDragHandler / IDragHandler are Unity EventSystem interfaces.
-    // In standard Mono BepInEx these are plain C# interface implementations.
-    // In IL2CPP, the Il2CppInterop layer generates proxy types for them so that
-    // calling OnBeginDrag / OnDrag from the native Unity event system crosses
-    // the IL2CPP→Mono boundary correctly. No extra work is needed here; just be
-    // aware that if you see "method not found" errors at runtime it usually means
-    // the interface proxy DLL wasn't generated (re-run the game to regenerate interop/).
+    /// <summary>Sets the RectTransform that should move when this drag handle is dragged.</summary>
+    public void Initialise(RectTransform target)
+    {
+        _target = target;
+    }
 
     public void OnBeginDrag(PointerEventData eventData)
     {
-        if (_rectTransform == null || _canvas == null) return;
+        if (_target == null)
+        {
+            return;
+        }
 
         RectTransformUtility.ScreenPointToLocalPointInRectangle(
-            _rectTransform,
+            _target.parent as RectTransform,
             eventData.position,
-            _canvas.worldCamera,
+            eventData.pressEventCamera,
             out var localPoint);
 
-        _dragOffset = _rectTransform.anchoredPosition - localPoint;
+        _offset = _target.anchoredPosition - localPoint;
     }
 
     public void OnDrag(PointerEventData eventData)
     {
-        if (_rectTransform == null || _canvas == null) return;
+        if (_target == null)
+        {
+            return;
+        }
 
         RectTransformUtility.ScreenPointToLocalPointInRectangle(
-            _rectTransform.parent as RectTransform ?? _rectTransform,
+            _target.parent as RectTransform,
             eventData.position,
-            _canvas.worldCamera,
+            eventData.pressEventCamera,
             out var localPoint);
 
-        _rectTransform.anchoredPosition = localPoint + _dragOffset;
+        _target.anchoredPosition = localPoint + _offset;
     }
 }
